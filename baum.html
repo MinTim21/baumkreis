@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <title>Baumkreis – Baum gießen</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --surface2: #242424;
+      --border: rgba(255,255,255,0.08);
+      --border2: rgba(255,255,255,0.14);
+      --text: #f0f0f0;
+      --muted: #6b7280;
+      --green: #4ade80;
+      --green-dim: rgba(74,222,128,0.12);
+      --orange: #f97316;
+      --orange-dim: rgba(249,115,22,0.1);
+      --red: #ef4444;
+      --yellow: #fbbf24;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 1rem; font-weight: 700; }
+    .logo-icon {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+    }
+    .logo span { color: var(--green); }
+
+    .container { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
+
+    /* Tree card */
+    .tree-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 14px;
+    }
+
+    .tree-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .tree-name { font-size: 1.3rem; font-weight: 800; line-height: 1.2; }
+    .tree-species { font-size: 0.85rem; color: var(--muted); font-style: italic; margin-top: 3px; }
+
+    .tree-id-badge {
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: var(--surface2);
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .tree-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tree-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    /* Status banner */
+    .status-banner {
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .status-banner.satisfied {
+      background: var(--green-dim);
+      border: 1px solid rgba(74,222,128,0.25);
+    }
+
+    .status-banner.needs-water {
+      background: var(--orange-dim);
+      border: 1px solid rgba(249,115,22,0.25);
+    }
+
+    .status-banner .status-icon { font-size: 1.8rem; flex-shrink: 0; }
+    .status-banner .status-text h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 3px; }
+    .status-banner .status-text p { font-size: 0.8rem; color: var(--muted); }
+    .status-banner.satisfied .status-text h3 { color: var(--green); }
+    .status-banner.needs-water .status-text h3 { color: var(--orange); }
+
+    /* Progress bar */
+    .water-progress { margin-top: 10px; }
+    .water-progress-bar {
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+    .water-progress-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.6s ease;
+    }
+    .water-progress-fill.satisfied { background: var(--green); }
+    .water-progress-fill.needs-water { background: var(--orange); }
+    .water-progress-label { font-size: 0.72rem; color: var(--muted); }
+
+    /* Watering form */
+    .water-form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      margin-bottom: 14px;
+    }
+
+    .form-title { font-size: 1rem; font-weight: 700; margin-bottom: 18px; }
+
+    .form-group { display: flex; flex-direction: column; gap: 7px; }
+    .form-group + .form-group { margin-top: 14px; }
+
+    label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+    input[type="number"], input[type="text"] {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 13px 14px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      width: 100%;
+      font-family: inherit;
+      -webkit-appearance: none;
+    }
+
+    input:focus { border-color: var(--green); }
+    input::placeholder { color: var(--muted); }
+    input.error { border-color: var(--red); }
+
+    .field-error { font-size: 0.78rem; color: var(--red); }
+
+    /* Buttons */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: opacity 0.15s;
+      width: 100%;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--green); color: #0f0f0f; margin-top: 20px; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--text); margin-top: 12px; font-size: 0.9rem; padding: 12px; }
+
+    /* Reward panel */
+    .reward-panel {
+      background: var(--surface);
+      border: 1px solid rgba(74,222,128,0.3);
+      border-radius: var(--radius);
+      padding: 32px 24px;
+      text-align: center;
+      margin-bottom: 14px;
+      display: none;
+    }
+
+    .reward-panel.visible {
+      display: block;
+      animation: slideIn 0.4s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .reward-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+
+    .reward-amount {
+      font-size: 3.5rem;
+      font-weight: 800;
+      color: var(--yellow);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .reward-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 16px; }
+
+    .rank-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--green-dim);
+      border: 1px solid rgba(74,222,128,0.25);
+      color: var(--green);
+      border-radius: 20px;
+      padding: 8px 18px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+    }
+
+    .rank-progress-wrap { margin-bottom: 16px; }
+    .rank-progress {
+      background: var(--surface2);
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .rank-progress-fill { height: 100%; background: var(--green); border-radius: 99px; transition: width 0.8s ease; }
+    .rank-next-hint { font-size: 0.75rem; color: var(--muted); }
+
+    /* Recent log */
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .log-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+
+    .log-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .log-item-left .log-user { font-size: 0.875rem; font-weight: 600; }
+    .log-item-left .log-time { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .log-item-right { font-size: 0.95rem; font-weight: 700; color: #60a5fa; white-space: nowrap; }
+
+    /* Error / Loading */
+    .state-card {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .state-card .state-icon { font-size: 3rem; margin-bottom: 14px; }
+    .state-card h2 { font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .state-card p { font-size: 0.875rem; line-height: 1.6; }
+
+    .spinner-large {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border2);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌳</div>
+    Baumkreis <span>/ Gießen</span>
+  </div>
+</header>
+
+<!-- Loading state -->
+<div id="loadingState" class="container">
+  <div class="state-card" style="padding-top:80px">
+    <div class="spinner-large"></div>
+    <p>Baumdaten werden geladen…</p>
+  </div>
+</div>
+
+<!-- Error state -->
+<div id="errorState" class="container" style="display:none">
+  <div class="state-card" style="padding-top:80px">
+    <div class="state-icon">🌵</div>
+    <h2>Baum nicht gefunden</h2>
+    <p id="errorMsg">Dieser QR-Code führt zu keinem bekannten Baum.</p>
+  </div>
+</div>
+
+<!-- Main content -->
+<div id="mainContent" class="container" style="display:none">
+
+  <div class="tree-card" id="treeCard"></div>
+
+  <div id="statusBanner"></div>
+
+  <div class="water-form-card" id="waterFormCard" style="display:none">
+    <div class="form-title">🪣 Jetzt gießen</div>
+    <div class="form-group">
+      <label for="fLiters">Menge in Litern *</label>
+      <input type="number" id="fLiters" min="0.5" step="0.5" placeholder="z. B. 10" inputmode="decimal" />
+      <div class="field-error" id="litersError" style="display:none">Bitte eine gültige Menge eingeben (min. 0,5 L)</div>
+    </div>
+    <div class="form-group">
+      <label for="fUserName">Dein Name / Spitzname</label>
+      <input type="text" id="fUserName" placeholder="Optional – z. B. Max" maxlength="40" />
+    </div>
+    <button class="btn btn-primary" id="submitBtn" onclick="submitWatering()">
+      Gießen bestätigen
+    </button>
+  </div>
+
+  <div class="reward-panel" id="rewardPanel">
+    <div class="reward-label">Gießkannen verdient</div>
+    <div class="reward-amount" id="rewardAmount">🪣 ×0</div>
+    <div class="reward-sub">Gesamt: <strong id="rewardTotal">0</strong> 🪣</div>
+    <div class="rank-badge" id="rewardRank"></div>
+    <div class="rank-progress-wrap" id="rankProgressWrap">
+      <div class="rank-progress">
+        <div class="rank-progress-fill" id="rankProgressFill" style="width:0%"></div>
+      </div>
+      <div class="rank-next-hint" id="rankNextHint"></div>
+    </div>
+    <button class="btn btn-ghost" onclick="resetForm()">↩ Nochmals gießen</button>
+  </div>
+
+  <div id="recentSection" style="display:none">
+    <div class="section-title">Letzte Gießvorgänge</div>
+    <ul class="log-list" id="recentLog"></ul>
+  </div>
+
+</div>
+
+<script>
+  // ═══════════════════════════════════════════════════════════
+  //  FIREBASE KONFIGURATION — Gleiche Werte wie in verwaltung.html
+  // ═══════════════════════════════════════════════════════════
+  const FIREBASE_CONFIG = {
+    apiKey:            "AIzaSyC3fH9RJFV_7v1W5__iRUEv2KnW6clMEXI",
+    authDomain:        "baumkreis.firebaseapp.com",
+    projectId:         "baumkreis",
+    storageBucket:     "baumkreis.firebasestorage.app",
+    messagingSenderId: "218832459830",
+    appId:             "1:218832459830:web:df513801cee5e49539e097"
+  };
+  firebase.initializeApp(FIREBASE_CONFIG);
+  const db = firebase.firestore();
+
+  // ── Ranks ────────────────────────────────────────────────
+  const RANKS = [
+    { min: 0,    label: 'Anfänger',    icon: '🌱' },
+    { min: 50,   label: 'Baumpfleger', icon: '💧' },
+    { min: 200,  label: 'Baumfreund',  icon: '🌿' },
+    { min: 500,  label: 'Baumwächter', icon: '🌳' },
+    { min: 1000, label: 'Baummeister', icon: '🏆' },
+  ];
+
+  function getRank(g) {
+    for (let i = RANKS.length - 1; i >= 0; i--) {
+      if (g >= RANKS[i].min) return RANKS[i];
+    }
+    return RANKS[0];
+  }
+
+  function getNextRank(g) {
+    return RANKS.find(r => r.min > g) || null;
+  }
+
+  // ── State ────────────────────────────────────────────────
+  let currentTree = null;
+  let logUnsubscribe = null;
+
+  // ── User (localStorage) ──────────────────────────────────
+  function loadUser() {
+    try { return JSON.parse(localStorage.getItem('baumkreis_user')) || null; } catch { return null; }
+  }
+
+  function saveUser(u) {
+    localStorage.setItem('baumkreis_user', JSON.stringify(u));
+  }
+
+  function ensureUser(name) {
+    let u = loadUser();
+    if (!u) {
+      u = {
+        id: 'U-' + Date.now().toString(36).toUpperCase().slice(-6),
+        name: name || 'Anonym',
+        giesskannen: 0
+      };
+    } else {
+      if (name) u.name = name;
+    }
+    return u;
+  }
+
+  // ── Recent liters (last 24h, client-side filter) ─────────
+  async function getRecentLiters() {
+    if (!currentTree) return 0;
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const snap = await db.collection('waterlogs').where('treeId', '==', currentTree.id).get();
+    return snap.docs
+      .filter(d => {
+        const ts = d.data().timestamp?.toDate?.() || new Date(d.data().timestamp);
+        return ts >= cutoff;
+      })
+      .reduce((s, d) => s + (d.data().liters || 0), 0);
+  }
+
+  // ── Render helpers ───────────────────────────────────────
+  function renderTreeCard() {
+    const t = currentTree;
+    document.getElementById('treeCard').innerHTML = `
+      <div class="tree-card-top">
+        <div>
+          <div class="tree-name">${esc(t.name)}</div>
+          ${t.species ? `<div class="tree-species">${esc(t.species)}</div>` : ''}
+        </div>
+        <span class="tree-id-badge">${esc(t.id)}</span>
+      </div>
+      <div class="tree-meta">
+        ${t.location ? `<div class="tree-meta-item"><span>📍</span><span>${esc(t.location)}</span></div>` : ''}
+        <div class="tree-meta-item"><span>🪣</span><span>Ziel: ${t.waterTarget || 30} L / 24h</span></div>
+      </div>
+    `;
+  }
+
+  async function renderStatusAndForm() {
+    const liters = await getRecentLiters();
+    const target = currentTree.waterTarget || 30;
+    const satisfied = liters >= target;
+    const pct = Math.min(100, Math.round((liters / target) * 100));
+
+    document.getElementById('statusBanner').innerHTML = satisfied
+      ? `<div class="status-banner satisfied">
+           <div class="status-icon">💧</div>
+           <div class="status-text">
+             <h3>Ausreichend versorgt</h3>
+             <p>Dieser Baum braucht heute kein Wasser mehr.</p>
+             <div class="water-progress" style="margin-top:8px">
+               <div class="water-progress-bar"><div class="water-progress-fill satisfied" style="width:100%"></div></div>
+               <div class="water-progress-label">${liters.toFixed(1)} / ${target} L gegossen</div>
+             </div>
+           </div>
+         </div>`
+      : `<div class="status-banner needs-water">
+           <div class="status-icon">🌡️</div>
+           <div class="status-text">
+             <h3>Braucht Wasser!</h3>
+             <p>Noch ${(target - liters).toFixed(1)} Liter bis zum Tagesziel.</p>
+             <div class="water-progress" style="margin-top:8px">
+               <div class="water-progress-bar"><div class="water-progress-fill needs-water" style="width:${pct}%"></div></div>
+               <div class="water-progress-label">${liters.toFixed(1)} / ${target} L gegossen</div>
+             </div>
+           </div>
+         </div>`;
+
+    document.getElementById('waterFormCard').style.display = satisfied ? 'none' : 'block';
+    document.getElementById('rewardPanel').classList.remove('visible');
+  }
+
+  function renderRecentLog(docs) {
+    const section = document.getElementById('recentSection');
+    if (docs.length === 0) { section.style.display = 'none'; return; }
+
+    section.style.display = 'block';
+    document.getElementById('recentLog').innerHTML = docs.map(d => {
+      const ts = d.timestamp?.toDate?.() || new Date(d.timestamp);
+      const dateStr = isNaN(ts)
+        ? '–'
+        : ts.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit' }) +
+          ' ' + ts.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' }) + ' Uhr';
+      return `
+        <li class="log-item">
+          <div class="log-item-left">
+            <div class="log-user">${esc(d.userName || 'Anonym')}</div>
+            <div class="log-time">${dateStr}</div>
+          </div>
+          <div class="log-item-right">${Number(d.liters).toFixed(1)} L 🪣</div>
+        </li>`;
+    }).join('');
+  }
+
+  function setupLogListener() {
+    if (logUnsubscribe) logUnsubscribe();
+    logUnsubscribe = db.collection('waterlogs')
+      .where('treeId', '==', currentTree.id)
+      .onSnapshot(snap => {
+        const logs = snap.docs
+          .map(d => d.data())
+          .sort((a, b) => {
+            const ta = a.timestamp?.toDate?.() || new Date(a.timestamp);
+            const tb = b.timestamp?.toDate?.() || new Date(b.timestamp);
+            return tb - ta;
+          })
+          .slice(0, 5);
+        renderRecentLog(logs);
+      }, err => {
+        console.warn('Log listener:', err.message);
+      });
+  }
+
+  // ── Submit watering ──────────────────────────────────────
+  async function submitWatering() {
+    const litersRaw = parseFloat(document.getElementById('fLiters').value);
+    const litersEl = document.getElementById('fLiters');
+    const errEl = document.getElementById('litersError');
+
+    if (!litersRaw || litersRaw < 0.5) {
+      litersEl.classList.add('error');
+      errEl.style.display = 'block';
+      litersEl.focus();
+      return;
+    }
+    litersEl.classList.remove('error');
+    errEl.style.display = 'none';
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Wird gespeichert…';
+
+    const nameInput = document.getElementById('fUserName').value.trim();
+    const user = ensureUser(nameInput);
+    const liters = Math.round(litersRaw * 10) / 10;
+
+    try {
+      // Write waterlog entry
+      await db.collection('waterlogs').add({
+        treeId:    currentTree.id,
+        userId:    user.id,
+        userName:  user.name,
+        liters,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Update tree's lastWateredAt
+      await db.collection('trees').doc(currentTree.id).update({
+        lastWateredAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Calculate user's total Gießkannen from Firestore
+      const userLogsSnap = await db.collection('waterlogs')
+        .where('userId', '==', user.id)
+        .get();
+      const totalLiters = userLogsSnap.docs.reduce((s, d) => s + (d.data().liters || 0), 0);
+      user.giesskannen = Math.round(totalLiters * 10) / 10;
+      saveUser(user);
+
+      // Show reward
+      showReward(liters, user.giesskannen);
+
+      // Update status banner (might now be satisfied)
+      await renderStatusAndForm();
+      // Keep reward visible (renderStatusAndForm hides it, so re-show)
+      document.getElementById('rewardPanel').classList.add('visible');
+      document.getElementById('waterFormCard').style.display = 'none';
+
+    } catch (err) {
+      console.error(err);
+      btn.disabled = false;
+      btn.textContent = 'Gießen bestätigen';
+      alert('Fehler beim Speichern: ' + err.message);
+    }
+  }
+
+  function showReward(liters, totalGiesskannen) {
+    document.getElementById('rewardAmount').textContent = `🪣 ×${liters.toFixed(1)}`;
+    document.getElementById('rewardTotal').textContent = totalGiesskannen.toFixed(1);
+
+    const rank = getRank(totalGiesskannen);
+    const next = getNextRank(totalGiesskannen);
+
+    document.getElementById('rewardRank').textContent = `${rank.icon} ${rank.label}`;
+    document.getElementById('rewardPanel').classList.add('visible');
+
+    if (next) {
+      const pct = Math.round(((totalGiesskannen - rank.min) / (next.min - rank.min)) * 100);
+      document.getElementById('rankProgressFill').style.width = pct + '%';
+      document.getElementById('rankNextHint').textContent =
+        `Noch ${(next.min - totalGiesskannen).toFixed(1)} 🪣 bis ${next.icon} ${next.label}`;
+      document.getElementById('rankProgressWrap').style.display = 'block';
+    } else {
+      document.getElementById('rankProgressWrap').style.display = 'none';
+      document.getElementById('rankNextHint').textContent = 'Höchster Rang erreicht! 🏆';
+    }
+  }
+
+  async function resetForm() {
+    document.getElementById('rewardPanel').classList.remove('visible');
+    document.getElementById('fLiters').value = '';
+    document.getElementById('fLiters').classList.remove('error');
+    document.getElementById('litersError').style.display = 'none';
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('submitBtn').textContent = 'Gießen bestätigen';
+    await renderStatusAndForm();
+  }
+
+  // ── Utils ────────────────────────────────────────────────
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function showError(msg) {
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'none';
+    document.getElementById('errorMsg').textContent = msg;
+    document.getElementById('errorState').style.display = 'block';
+  }
+
+  // ── Init ─────────────────────────────────────────────────
+  async function init() {
+    const params = new URLSearchParams(window.location.search);
+    const treeId = params.get('id');
+
+    if (!treeId) {
+      showError('Kein Baum angegeben. Bitte QR-Code am Baum scannen.');
+      return;
+    }
+
+    try {
+      const doc = await db.collection('trees').doc(treeId).get();
+      if (!doc.exists) {
+        showError('Dieser Baum wurde nicht gefunden. Eventuell wurde er aus der Verwaltung entfernt.');
+        return;
+      }
+
+      currentTree = { id: doc.id, ...doc.data() };
+      document.title = `${currentTree.name} – Baumkreis`;
+
+      renderTreeCard();
+      await renderStatusAndForm();
+      setupLogListener();
+
+      const user = loadUser();
+      if (user?.name) document.getElementById('fUserName').value = user.name;
+
+      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+
+    } catch (err) {
+      console.error(err);
+      showError('Verbindungsfehler. Bitte Firebase-Konfiguration prüfen.');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Baumkreis – Verwaltung</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --surface2: #242424;
+      --border: rgba(255,255,255,0.08);
+      --border2: rgba(255,255,255,0.14);
+      --text: #f0f0f0;
+      --muted: #6b7280;
+      --green: #4ade80;
+      --green-dim: rgba(74,222,128,0.12);
+      --orange: #f97316;
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --radius: 10px;
+    }
+
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 1rem; font-weight: 700; }
+    .logo-icon {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+    }
+    .logo span { color: var(--green); }
+
+    main { max-width: 1300px; margin: 0 auto; padding: 36px 32px; }
+
+    .page-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; }
+    .page-header h1 { font-size: 1.6rem; font-weight: 800; line-height: 1.2; }
+    .page-header h1 small {
+      display: block; font-size: 0.8rem; font-weight: 400; color: var(--muted);
+      margin-bottom: 4px; letter-spacing: 0.15em; text-transform: uppercase;
+    }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px; }
+    .stat-card .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .stat-card .stat-value { font-size: 2rem; font-weight: 800; color: var(--green); }
+
+    .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .search-box { flex: 1; max-width: 340px; position: relative; }
+    .search-box input {
+      width: 100%; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 12px 9px 36px; color: var(--text); font-size: 0.875rem; outline: none;
+    }
+    .search-box input::placeholder { color: var(--muted); }
+    .search-box input:focus { border-color: var(--border2); }
+    .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 0.85rem; pointer-events: none; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px;
+      border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; border: none;
+      transition: opacity 0.15s; white-space: nowrap;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--green); color: #0f0f0f; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--text); }
+    .btn-ghost:hover { background: var(--surface2); opacity: 1; }
+    .btn-danger { background: var(--red-dim); border: 1px solid rgba(239,68,68,0.25); color: var(--red); }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 960px; }
+    thead th {
+      padding: 11px 16px; text-align: left; font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+    tbody td { padding: 13px 16px; font-size: 0.875rem; vertical-align: middle; }
+
+    .tree-id { font-family: 'Courier New', monospace; font-size: 0.78rem; color: var(--muted); background: var(--surface2); padding: 2px 7px; border-radius: 4px; }
+    .coord-cell { font-family: 'Courier New', monospace; font-size: 0.78rem; color: #93c5fd; }
+    .coord-cell.none { color: var(--muted); font-family: inherit; font-size: 0.875rem; }
+    .actions { display: flex; gap: 8px; }
+
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .empty-state p { font-size: 0.9rem; }
+
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; }
+    .badge-green { background: var(--green-dim); color: var(--green); }
+    .badge-muted { background: var(--surface2); color: var(--muted); }
+    .badge-orange { background: rgba(249,115,22,0.12); color: var(--orange); }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
+      z-index: 100; display: flex; align-items: center; justify-content: center; padding: 24px;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .modal-backdrop.open { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border2); border-radius: 14px;
+      width: 100%; max-width: 820px; max-height: 90vh; overflow-y: auto;
+      transform: translateY(16px) scale(0.98); transition: transform 0.22s cubic-bezier(0.4,0,0.2,1);
+    }
+    .modal-backdrop.open .modal { transform: translateY(0) scale(1); }
+    .modal-header { padding: 22px 28px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-header h2 { font-size: 1.1rem; font-weight: 700; }
+    .modal-close {
+      width: 32px; height: 32px; border-radius: 6px; background: transparent;
+      border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 1rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-close:hover { background: var(--surface2); color: var(--text); }
+    .modal-body { padding: 24px 28px; display: grid; grid-template-columns: 1fr 220px; gap: 28px; }
+    .modal-footer { padding: 18px 28px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+    input[type="text"], input[type="number"], textarea {
+      background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px;
+      padding: 9px 12px; color: var(--text); font-size: 0.875rem; outline: none; width: 100%; font-family: inherit;
+    }
+    input:focus, textarea:focus { border-color: var(--green); }
+    input::placeholder, textarea::placeholder { color: var(--muted); }
+    textarea { resize: vertical; min-height: 72px; }
+
+    .gps-block { grid-column: 1 / -1; background: var(--surface2); border: 1px solid var(--border2); border-radius: 10px; padding: 16px 18px; }
+    .gps-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .gps-title { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .gps-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .gps-status { font-size: 0.78rem; margin-top: 10px; display: flex; align-items: center; gap: 6px; min-height: 20px; }
+    .gps-status.loading { color: #fbbf24; }
+    .gps-status.ok { color: var(--green); }
+    .gps-status.err { color: var(--red); }
+    .spinner { width: 12px; height: 12px; border: 2px solid rgba(251,191,36,0.3); border-top-color: #fbbf24; border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .qr-panel { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+    .qr-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); align-self: flex-start; }
+    .qr-box { width: 180px; height: 180px; background: #fff; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
+    .qr-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #9ca3af; text-align: center; padding: 16px; }
+    .qr-placeholder .ph-icon { font-size: 2rem; }
+    .qr-placeholder p { font-size: 0.72rem; line-height: 1.4; }
+    .qr-url { font-family: 'Courier New', monospace; font-size: 0.65rem; color: var(--muted); word-break: break-all; text-align: center; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%; }
+
+    .qr-detail-modal { max-width: 400px; }
+    .qr-detail-body { padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+    .qr-detail-box { width: 240px; height: 240px; background: #fff; border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .qr-tree-name { font-size: 1rem; font-weight: 700; text-align: center; }
+    .qr-tree-url { font-family: 'Courier New', monospace; font-size: 0.72rem; color: var(--muted); text-align: center; word-break: break-all; }
+
+    .notification {
+      position: fixed; bottom: 24px; right: 24px; background: var(--surface);
+      border: 1px solid var(--green); border-radius: 10px; padding: 12px 18px;
+      font-size: 0.875rem; color: var(--green); z-index: 999;
+      transform: translateY(16px); opacity: 0; transition: all 0.25s; max-width: 320px;
+    }
+    .notification.show { transform: translateY(0); opacity: 1; }
+
+    @media (max-width: 700px) {
+      .modal-body { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      main { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌳</div>
+    Baumkreis <span>/ Verwaltung</span>
+  </div>
+  <div style="font-size:0.78rem;color:var(--muted)">Admin</div>
+</header>
+
+<main>
+  <div class="page-header">
+    <h1><small>Baum Administration Zentrale</small>Baumverwaltung</h1>
+    <button class="btn btn-primary" onclick="openAddModal()">＋ Baum hinzufügen</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card"><div class="stat-label">Bäume gesamt</div><div class="stat-value" id="statTotal">–</div></div>
+    <div class="stat-card"><div class="stat-label">Mit GPS-Koordinaten</div><div class="stat-value" id="statGps">–</div></div>
+    <div class="stat-card"><div class="stat-label">Mit QR-Code</div><div class="stat-value" id="statQr">–</div></div>
+    <div class="stat-card"><div class="stat-label">Heute gegossen</div><div class="stat-value" id="statToday">–</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="Baum suchen…" oninput="applySearch()" />
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name / Baumart</th>
+          <th>Standort</th>
+          <th>GPS-Koordinaten</th>
+          <th>GPS</th>
+          <th>Wasserstatus (24h)</th>
+          <th>Zuletzt gegossen</th>
+          <th>QR-Code</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+    <div id="emptyState" class="empty-state" style="display:none">
+      <div class="empty-icon">🌱</div>
+      <p>Noch keine Bäume erfasst.<br />Klicke auf „Baum hinzufügen" um zu starten.</p>
+    </div>
+    <div id="loadingState" class="empty-state">
+      <div class="empty-icon">⏳</div>
+      <p>Verbinde mit Firebase…</p>
+    </div>
+  </div>
+</main>
+
+<!-- Add/Edit Modal -->
+<div class="modal-backdrop" id="addModal" onclick="handleBackdropClick(event,'addModal')">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Neuen Baum hinzufügen</h2>
+      <button class="modal-close" onclick="closeModal('addModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="fName">Bezeichnung / Name *</label>
+            <input type="text" id="fName" placeholder="z. B. Linde vor Rathaus" oninput="updateQrPreview()" />
+          </div>
+          <div class="form-group">
+            <label for="fSpecies">Baumart</label>
+            <input type="text" id="fSpecies" placeholder="z. B. Tilia cordata" />
+          </div>
+          <div class="form-group full">
+            <label for="fLocation">Standort / Straße</label>
+            <input type="text" id="fLocation" placeholder="z. B. Hauptstraße 12, 69117 Heidelberg" />
+          </div>
+          <div class="form-group">
+            <label for="fWaterTarget">Wasserbedarf (Liter / 24h)</label>
+            <input type="number" id="fWaterTarget" value="30" min="1" max="999" step="1" />
+          </div>
+          <div class="form-group"></div>
+
+          <div class="gps-block">
+            <div class="gps-header">
+              <span class="gps-title">📍 GPS-Koordinaten</span>
+              <button class="btn btn-ghost btn-sm" onclick="detectGps()">📡 Automatisch ermitteln</button>
+            </div>
+            <div class="gps-fields">
+              <div class="form-group">
+                <label for="fLat">Breitengrad (Lat)</label>
+                <input type="number" id="fLat" placeholder="49.408691" step="0.000001" />
+              </div>
+              <div class="form-group">
+                <label for="fLng">Längengrad (Lng)</label>
+                <input type="number" id="fLng" placeholder="8.694724" step="0.000001" />
+              </div>
+            </div>
+            <div class="gps-status" id="gpsStatus"></div>
+          </div>
+
+          <div class="form-group full">
+            <label for="fNotes">Notizen</label>
+            <textarea id="fNotes" placeholder="Besonderheiten, Zustand, Pflegehinweise…"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="qr-panel">
+        <div class="qr-label">QR-Code Vorschau</div>
+        <div class="qr-box" id="qrPreviewBox">
+          <div class="qr-placeholder">
+            <div class="ph-icon">📱</div>
+            <p>QR-Code erscheint sobald ein Name vergeben wurde</p>
+          </div>
+        </div>
+        <div class="qr-url" id="qrUrlPreview">–</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('addModal')">Abbrechen</button>
+      <button class="btn btn-primary" id="saveBtn" onclick="saveTree()">Baum speichern &amp; QR-Code erstellen</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR Detail Modal -->
+<div class="modal-backdrop" id="qrModal" onclick="handleBackdropClick(event,'qrModal')">
+  <div class="modal qr-detail-modal">
+    <div class="modal-header">
+      <h2>QR-Code</h2>
+      <button class="modal-close" onclick="closeModal('qrModal')">✕</button>
+    </div>
+    <div class="qr-detail-body">
+      <div class="qr-detail-box" id="qrDetailBox"></div>
+      <div class="qr-tree-name" id="qrDetailName"></div>
+      <div class="qr-tree-url" id="qrDetailUrl"></div>
+      <button class="btn btn-primary" onclick="downloadQr()" style="width:100%">⬇ Als PNG herunterladen</button>
+      <p style="font-size:0.72rem;color:var(--muted);text-align:center;line-height:1.5">
+        QR-Code ausdrucken und am Baum befestigen.<br />Beim Scannen gelangt man direkt zur Baumseite.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="notification" id="notification"></div>
+
+<script>
+  // ═══════════════════════════════════════════════════════════
+  //  FIREBASE KONFIGURATION — Hier deine Werte eintragen
+  //  console.firebase.google.com → Projekteinstellungen → Deine Apps
+  // ═══════════════════════════════════════════════════════════
+  const FIREBASE_CONFIG = {
+    apiKey:            "AIzaSyC3fH9RJFV_7v1W5__iRUEv2KnW6clMEXI",
+    authDomain:        "baumkreis.firebaseapp.com",
+    projectId:         "baumkreis",
+    storageBucket:     "baumkreis.firebasestorage.app",
+    messagingSenderId: "218832459830",
+    appId:             "1:218832459830:web:df513801cee5e49539e097"
+  };
+  firebase.initializeApp(FIREBASE_CONFIG);
+  const db = firebase.firestore();
+
+  // ── State ────────────────────────────────────────────────
+  let allTrees = [];
+  let lastRecentMap = {};
+  let editingId = null;
+  let currentQrTree = null;
+
+  // ── Helpers ──────────────────────────────────────────────
+  function treeUrl(id) {
+    const origin = window.location.origin === 'null' ? '.' : window.location.origin;
+    return `${origin}/baum.html?id=${id}`;
+  }
+
+  function genId() {
+    return 'BK-' + Date.now().toString(36).toUpperCase().slice(-5);
+  }
+
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function formatDate(val) {
+    if (!val) return '–';
+    const d = val.toDate ? val.toDate() : new Date(val);
+    if (isNaN(d)) return '–';
+    return d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
+  }
+
+  // ── Live listener ────────────────────────────────────────
+  function setupLiveListener() {
+    db.collection('trees').orderBy('createdAt', 'desc').onSnapshot(async snap => {
+      allTrees = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      await refreshTableAndStats();
+    }, err => {
+      document.getElementById('loadingState').innerHTML =
+        '<div class="empty-icon">⚠️</div><p style="color:#ef4444">Firebase-Verbindung fehlgeschlagen.<br />Bitte Firebase-Config prüfen.</p>';
+      console.error('Firebase error:', err);
+    });
+  }
+
+  async function refreshTableAndStats() {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    let recentMap = {};
+    let todayTrees = new Set();
+
+    try {
+      const logsSnap = await db.collection('waterlogs')
+        .where('timestamp', '>=', cutoff)
+        .get();
+
+      logsSnap.docs.forEach(d => {
+        const { treeId, liters, timestamp } = d.data();
+        recentMap[treeId] = (recentMap[treeId] || 0) + (liters || 0);
+        const ts = timestamp?.toDate?.() || new Date(timestamp);
+        if (ts >= midnight) todayTrees.add(treeId);
+      });
+    } catch (err) {
+      console.warn('Waterlogs fetch:', err.message);
+    }
+
+    lastRecentMap = recentMap;
+    renderTable(recentMap);
+    updateStats(todayTrees.size);
+  }
+
+  // ── Render table ─────────────────────────────────────────
+  function renderTable(recentMap) {
+    const q = (document.getElementById('searchInput').value || '').toLowerCase();
+    const filtered = allTrees.filter(t =>
+      !q ||
+      (t.name||'').toLowerCase().includes(q) ||
+      (t.species||'').toLowerCase().includes(q) ||
+      (t.location||'').toLowerCase().includes(q) ||
+      (t.id||'').toLowerCase().includes(q)
+    );
+
+    document.getElementById('loadingState').style.display = 'none';
+
+    const tbody = document.getElementById('tableBody');
+    const empty = document.getElementById('emptyState');
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+
+    empty.style.display = 'none';
+    tbody.innerHTML = filtered.map(t => {
+      const target = t.waterTarget || 30;
+      const recent = recentMap[t.id] || 0;
+      const satisfied = recent >= target;
+      return `
+        <tr>
+          <td><span class="tree-id">${esc(t.id)}</span></td>
+          <td>
+            <div style="font-weight:600">${esc(t.name||'')}</div>
+            ${t.species ? `<div style="font-size:0.78rem;color:var(--muted);font-style:italic;margin-top:2px">${esc(t.species)}</div>` : ''}
+          </td>
+          <td style="color:var(--muted);font-size:0.82rem">${t.location ? esc(t.location) : '–'}</td>
+          <td>
+            ${t.lat && t.lng
+              ? `<div class="coord-cell">${Number(t.lat).toFixed(6)}</div><div class="coord-cell">${Number(t.lng).toFixed(6)}</div>`
+              : `<span class="coord-cell none">–</span>`}
+          </td>
+          <td>${t.lat && t.lng ? '<span class="badge badge-green">📍 GPS</span>' : '<span class="badge badge-muted">–</span>'}</td>
+          <td>
+            ${satisfied
+              ? `<span class="badge badge-green">💧 Versorgt</span>`
+              : `<span class="badge badge-orange">🪣 Braucht Wasser</span>`}
+            <div style="font-size:0.72rem;color:var(--muted);margin-top:3px">${recent.toFixed(1)} / ${target} L</div>
+          </td>
+          <td style="font-size:0.82rem;color:var(--muted);white-space:nowrap">${formatDate(t.lastWateredAt)}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="showQr('${esc(t.id)}')">📱 QR anzeigen</button></td>
+          <td>
+            <div class="actions">
+              <button class="btn btn-ghost btn-sm" onclick="openEditModal('${esc(t.id)}')">✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteTree('${esc(t.id)}')">🗑</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  function applySearch() { renderTable(lastRecentMap); }
+
+  function updateStats(todayCount) {
+    document.getElementById('statTotal').textContent = allTrees.length;
+    document.getElementById('statGps').textContent = allTrees.filter(t => t.lat && t.lng).length;
+    document.getElementById('statQr').textContent = allTrees.length;
+    document.getElementById('statToday').textContent = todayCount;
+  }
+
+  // ── GPS ──────────────────────────────────────────────────
+  function detectGps() {
+    if (!navigator.geolocation) { setGpsStatus('err', 'GPS nicht verfügbar.'); return; }
+    setGpsStatus('loading', 'Standort wird ermittelt…');
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        document.getElementById('fLat').value = pos.coords.latitude.toFixed(6);
+        document.getElementById('fLng').value = pos.coords.longitude.toFixed(6);
+        setGpsStatus('ok', `Koordinaten erfasst (±${Math.round(pos.coords.accuracy)} m)`);
+        updateQrPreview();
+      },
+      err => {
+        const msgs = { 1:'Zugriff verweigert.', 2:'Standort nicht ermittelbar.', 3:'Zeitüberschreitung.' };
+        setGpsStatus('err', msgs[err.code] || 'Unbekannter Fehler.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  function setGpsStatus(type, msg) {
+    const el = document.getElementById('gpsStatus');
+    el.className = 'gps-status ' + type;
+    el.innerHTML = type === 'loading'
+      ? `<span class="spinner"></span> ${msg}`
+      : (type === 'ok' ? '✓ ' : '⚠ ') + msg;
+  }
+
+  // ── QR Preview ───────────────────────────────────────────
+  function updateQrPreview() {
+    const name = document.getElementById('fName').value.trim();
+    const box = document.getElementById('qrPreviewBox');
+    const urlEl = document.getElementById('qrUrlPreview');
+
+    if (!name) {
+      box.innerHTML = `<div class="qr-placeholder"><div class="ph-icon">📱</div><p>QR-Code erscheint sobald ein Name vergeben wurde</p></div>`;
+      urlEl.textContent = '–';
+      return;
+    }
+
+    const tempId = editingId || ('PREV-' + name.slice(0,6).replace(/\s+/g,''));
+    const url = treeUrl(tempId);
+    box.innerHTML = '';
+    try {
+      new QRCode(box, { text: url, width: 170, height: 170, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
+    } catch(e) {}
+    urlEl.textContent = url;
+  }
+
+  // ── Modals ───────────────────────────────────────────────
+  function openAddModal() {
+    editingId = null;
+    document.getElementById('modalTitle').textContent = 'Neuen Baum hinzufügen';
+    clearForm();
+    openModal('addModal');
+  }
+
+  function openEditModal(id) {
+    const t = allTrees.find(x => x.id === id);
+    if (!t) return;
+    editingId = id;
+    document.getElementById('modalTitle').textContent = 'Baum bearbeiten';
+    document.getElementById('fName').value = t.name || '';
+    document.getElementById('fSpecies').value = t.species || '';
+    document.getElementById('fLocation').value = t.location || '';
+    document.getElementById('fWaterTarget').value = t.waterTarget || 30;
+    document.getElementById('fLat').value = t.lat || '';
+    document.getElementById('fLng').value = t.lng || '';
+    document.getElementById('fNotes').value = t.notes || '';
+    document.getElementById('gpsStatus').className = 'gps-status';
+    document.getElementById('gpsStatus').innerHTML = '';
+    updateQrPreview();
+    openModal('addModal');
+  }
+
+  function clearForm() {
+    ['fName','fSpecies','fLocation','fLat','fLng','fNotes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fWaterTarget').value = 30;
+    document.getElementById('gpsStatus').className = 'gps-status';
+    document.getElementById('gpsStatus').innerHTML = '';
+    updateQrPreview();
+  }
+
+  function openModal(id) { document.getElementById(id).classList.add('open'); document.body.style.overflow = 'hidden'; }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
+  function handleBackdropClick(e, id) { if (e.target === document.getElementById(id)) closeModal(id); }
+
+  // ── Save tree ────────────────────────────────────────────
+  async function saveTree() {
+    const name = document.getElementById('fName').value.trim();
+    if (!name) { showNotification('⚠ Bitte einen Namen eingeben.', true); document.getElementById('fName').focus(); return; }
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true; btn.textContent = 'Speichert…';
+
+    const data = {
+      name,
+      species:     document.getElementById('fSpecies').value.trim(),
+      location:    document.getElementById('fLocation').value.trim(),
+      waterTarget: parseInt(document.getElementById('fWaterTarget').value, 10) || 30,
+      lat:         document.getElementById('fLat').value.trim(),
+      lng:         document.getElementById('fLng').value.trim(),
+      notes:       document.getElementById('fNotes').value.trim(),
+    };
+
+    try {
+      if (editingId) {
+        data.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+        await db.collection('trees').doc(editingId).update(data);
+        showNotification('✓ Baum aktualisiert.');
+      } else {
+        const newId = genId();
+        data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        await db.collection('trees').doc(newId).set(data);
+        showNotification('✓ Baum hinzugefügt & QR-Code erstellt.');
+      }
+      closeModal('addModal');
+    } catch (err) {
+      showNotification('⚠ Fehler: ' + err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Baum speichern & QR-Code erstellen';
+    }
+  }
+
+  // ── Delete tree ──────────────────────────────────────────
+  async function deleteTree(id) {
+    const t = allTrees.find(x => x.id === id);
+    if (!t || !confirm(`Baum „${t.name}" wirklich löschen?`)) return;
+    try {
+      await db.collection('trees').doc(id).delete();
+      showNotification('Baum gelöscht.');
+    } catch (err) {
+      showNotification('⚠ Fehler beim Löschen.', true);
+    }
+  }
+
+  // ── Show / Download QR ───────────────────────────────────
+  function showQr(id) {
+    const t = allTrees.find(x => x.id === id);
+    if (!t) return;
+    currentQrTree = t;
+    document.getElementById('qrDetailName').textContent = t.name;
+    const url = treeUrl(t.id);
+    document.getElementById('qrDetailUrl').textContent = url;
+    const box = document.getElementById('qrDetailBox');
+    box.innerHTML = '';
+    new QRCode(box, { text: url, width: 220, height: 220, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.H });
+    openModal('qrModal');
+  }
+
+  function downloadQr() {
+    if (!currentQrTree) return;
+    const box = document.getElementById('qrDetailBox');
+    const src = box.querySelector('canvas') || box.querySelector('img');
+    if (!src) return;
+
+    const size = 280, pad = 20, labelH = 44;
+    const off = document.createElement('canvas');
+    off.width = size + pad * 2; off.height = size + labelH + pad * 2;
+    const ctx = off.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, off.width, off.height);
+
+    const draw = el => {
+      ctx.drawImage(el, pad, pad, size, size);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.font = 'bold 14px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      const label = currentQrTree.name.length > 36 ? currentQrTree.name.slice(0,33)+'…' : currentQrTree.name;
+      ctx.fillText(label, off.width/2, size + pad + 22);
+      ctx.fillStyle = '#6b7280'; ctx.font = '10px "Courier New", monospace';
+      ctx.fillText(currentQrTree.id, off.width/2, size + pad + 38);
+      const a = document.createElement('a');
+      a.download = `QR-${currentQrTree.id}-${currentQrTree.name.replace(/\s+/g,'-').slice(0,20)}.png`;
+      a.href = off.toDataURL('image/png'); a.click();
+    };
+
+    if (src.tagName === 'CANVAS') { draw(src); }
+    else { const tmp = new Image(); tmp.onload = () => draw(tmp); tmp.src = src.src; }
+  }
+
+  // ── Notification ─────────────────────────────────────────
+  function showNotification(msg, isError = false) {
+    const el = document.getElementById('notification');
+    el.textContent = msg;
+    el.style.borderColor = isError ? 'var(--red)' : 'var(--green)';
+    el.style.color = isError ? 'var(--red)' : 'var(--green)';
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeModal('addModal'); closeModal('qrModal'); }
+  });
+
+  setupLiveListener();
+</script>
+</body>
+</html>
